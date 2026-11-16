@@ -338,7 +338,7 @@ function lorTV(ms,WD){ const p=ms/WD; if(p<=0) return -1; if(p<=1){ const e=p<.5
 const E={
   out:'cubic-bezier(.22,.8,.25,1)', inOut:'cubic-bezier(.65,0,.35,1)', soft:'cubic-bezier(.4,0,.2,1)', in:'cubic-bezier(.55,0,.85,.35)'
 };
-let T0=performance.now(), SKIP=false;
+let T0=performance.now(), SKIP=false, SKIP_OPEN=false;
 const clean=el=>{ el.style.filter=''; el.style.transform=''; };
 const anim=(el,kf,o)=>{
   o=Object.assign({fill:'both'},o); const d=o.delay||0, after=o.after; delete o.after;
@@ -677,6 +677,9 @@ function playSkip(){
   const w=$('#wrap'); document.documentElement.classList.remove('answered');
   [w,flyL].forEach(el=>el.animate([{opacity:0},{opacity:1}],{duration:800,easing:'ease-out'}));
 }
+function playSkipOpen(){            // já respondeu em outro aparelho (descoberto pela planilha): o convite se abre sozinho e revela o convite já montado
+  if(started) return; SKIP_OPEN=true; play();
+}
 function play(){
   if(started) return; started=true;
   T0=performance.now();
@@ -691,10 +694,12 @@ function play(){
 }
 const SKIP_MS=13000;     // volta ao site depois de responder: entra direto no convite aberto, com os loops e a seta
 function playMain(){
+  if(SKIP_OPEN) SKIP=true;
+  if(SKIP_OPEN) flyL.animate([{opacity:0},{opacity:1}],{delay:1500,duration:1000,easing:'ease-out',fill:'backwards'});   // borboletas só aparecem quando as portas abrem
   const T=performance.now()-(SKIP?SKIP_MS:0); T0=T;
   const at=ms=>Math.max(0,T+ms-performance.now());
   // 2-3. laço, fita e portas: animação pré-renderizada (WebP animado) — o celular só reproduz, sem calcular o 3D
-  if(SKIP){ $('#dl').style.display='none'; $('#dr').style.display='none'; $('#bow').style.display='none'; }
+  if(SKIP && !SKIP_OPEN){ $('#dl').style.display='none'; $('#dr').style.display='none'; $('#bow').style.display='none'; }
   else if(OPEN_BLOB && !window.__seekMode){
     const oa=$('#openAnim'); oa.src=URL.createObjectURL(OPEN_BLOB); oa.style.display='block';
     requestAnimationFrame(()=>requestAnimationFrame(()=>{ $('#dl').style.display='none'; $('#dr').style.display='none'; $('#bow').style.display='none'; }));
@@ -709,7 +714,7 @@ function playMain(){
     anim($('#dr'),[{transform:'rotateY(0deg)',opacity:1},{transform:'rotateY(62deg)',opacity:1,offset:.6},{transform:'rotateY(100deg)',opacity:0}],{delay:1300,duration:1450,easing:E.inOut});
     $$('.door .shade').forEach(s=>anim(s,[{opacity:0},{opacity:1}],{delay:1300,duration:1100}));
   }
-  if(!window.__seekMode && !SKIP) setTimeout(()=>{ $('#closed').style.display='none'; },2850);
+  if(!window.__seekMode && (!SKIP || SKIP_OPEN)) setTimeout(()=>{ $('#closed').style.display='none'; },2850);
   // cantos ondulados
   anim($('#ondaSD'),[{opacity:0,transform:'translate(280px,-280px)'},{opacity:1,transform:'none'}],{delay:1900,duration:1000,easing:E.out});
   anim($('#ondaIE'),[{opacity:0,transform:'translate(-280px,280px)'},{opacity:1,transform:'none'}],{delay:2150,duration:1000,easing:E.out});
@@ -878,7 +883,7 @@ function playMain(){
   anim(ar,[{opacity:0},{opacity:1}],{delay:11800,duration:900,easing:E.soft});
   const arB=ar.querySelector('svg');
   ar.querySelectorAll('svg').forEach(arB=>anim(arB,[{transform:'translateY(0)'},{transform:'translateY(14px)'}],{delay:11800,duration:900,iterations:Infinity,direction:'alternate',easing:'ease-in-out'}));
-  setTimeout(()=>{ document.body.classList.remove('locked'); ar.style.pointerEvents='auto'; s1.style.cursor='default'; $('#closed').style.display='none'; },at(11800));
+  setTimeout(()=>{ document.body.classList.remove('locked'); ar.style.pointerEvents='auto'; s1.style.cursor='default'; $('#closed').style.display='none'; },SKIP_OPEN?2850:at(11800));
 }
 
 window.__seek=(t)=>{ drawWings(t); window.__fxSeekT=t; document.getAnimations().forEach(a=>{a.pause(); a.currentTime=t*1000;}); window.__lor && window.__lor(t*1000); window.__fxSeek(t); };
@@ -1054,7 +1059,7 @@ const OPEN_SRC="data:image/webp;base64,UklGRvRDFQBXRUJQVlA4WAoAAAASAAAAkQQA4wkAQ
   const vn=$('#vnome'); let fs=170; vn.style.fontSize=fs+'px'; while(vn.offsetWidth>1150 && fs>70){fs-=6; vn.style.fontSize=fs+'px';}
   layout(true);
   initRSVP();
-  if(mode==='again' && !params.has('autoplay')){ playSkip(); return; }      // já respondeu (Sim ou Não): pula a abertura
+  if(mode==='again' && !params.has('autoplay')){ if(document.documentElement.classList.contains('answered')) playSkip(); else playSkipOpen(); return; }      // já respondeu (Sim ou Não): pula a abertura
   $('#closed').classList.add('ready'); s1.style.cursor='pointer';
   s1.addEventListener('click',play);
   if(params.has('autoplay')) play();
