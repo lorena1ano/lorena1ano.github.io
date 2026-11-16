@@ -331,19 +331,23 @@ function lorTV(ms,WD){ const p=ms/WD; if(p<=0) return -1; if(p<=1){ const e=p<.5
 const E={
   out:'cubic-bezier(.22,.8,.25,1)', inOut:'cubic-bezier(.65,0,.35,1)', soft:'cubic-bezier(.4,0,.2,1)', in:'cubic-bezier(.55,0,.85,.35)'
 };
-let T0=performance.now();
+let T0=performance.now(), SKIP=false;
 const clean=el=>{ el.style.filter=''; el.style.transform=''; };
 const anim=(el,kf,o)=>{
   o=Object.assign({fill:'both'},o); const d=o.delay||0, after=o.after; delete o.after;
   const make=()=>{
     const oo=Object.assign({},o);
-    if(!window.__seekMode) oo.delay=Math.max(0,T0+d-performance.now());
+    if(SKIP && oo.iterations!==Infinity && T0+d+(oo.duration||0)*(oo.iterations||1)<=performance.now()){   // já teria terminado: aplica o estado final direto
+      const last=Array.isArray(kf)?kf[kf.length-1]:null;
+      if(last){ for(const k in last) if(k!=='offset'&&k!=='easing'&&k!=='composite') el.style[k]=last[k]; if(after) after(el); return null; } }
+    if(!window.__seekMode) oo.delay=SKIP? T0+d-performance.now() : Math.max(0,T0+d-performance.now());
     const a=el.animate(kf,oo);
     if(!window.__seekMode && oo.iterations!==Infinity)
       a.finished.then(()=>{ try{ a.commitStyles(); }catch(e){} a.cancel(); if(after) after(el); }).catch(()=>{});
     return a; };
-  if(window.__seekMode || d<400) return make();
-  setTimeout(make, d-300);
+  const wait=T0+d-300-performance.now();
+  if(window.__seekMode || d<400 || wait<50) return make();
+  setTimeout(make, wait);
 };
 const sec=x=>x*1000;
 function catmull(pts,n){
@@ -659,6 +663,12 @@ window.__fxSeek=(t)=>{ rnd=seeded(12345); P=[]; lastPen=null; penNow=null; acc={
 /* ---------- sequência principal ---------- */
 /* toque: o laço se desfaz (WebP animado próprio); logo depois começa a abertura do convite */
 const LACO_LEAD=0;        // o laço termina em ~1,2 s e as portas começam a abrir em 1,3 s na outra animação
+function playSkip(){
+  if(started) return; started=true; SKIP=true;
+  playMain();
+  const cl=$('#closed'); cl.style.pointerEvents='none';
+  cl.animate([{opacity:1},{opacity:0}],{duration:700,easing:'ease-out',fill:'forwards'}).finished.then(()=>{ cl.style.display='none'; });
+}
 function play(){
   if(started) return; started=true;
   T0=performance.now();
@@ -671,10 +681,13 @@ function play(){
   else anim($('#lacoS'),[{opacity:1},{opacity:0}],{duration:600,fill:'forwards'});
   setTimeout(playMain, LACO_LEAD);
 }
+const SKIP_MS=13000;     // volta ao site depois de responder: entra direto no convite aberto, com os loops e a seta
 function playMain(){
-  const T=performance.now(); T0=T;
+  const T=performance.now()-(SKIP?SKIP_MS:0); T0=T;
+  const at=ms=>Math.max(0,T+ms-performance.now());
   // 2-3. laço, fita e portas: animação pré-renderizada (WebP animado) — o celular só reproduz, sem calcular o 3D
-  if(OPEN_BLOB && !window.__seekMode){
+  if(SKIP){ $('#dl').style.display='none'; $('#dr').style.display='none'; $('#bow').style.display='none'; }
+  else if(OPEN_BLOB && !window.__seekMode){
     const oa=$('#openAnim'); oa.src=URL.createObjectURL(OPEN_BLOB); oa.style.display='block';
     requestAnimationFrame(()=>requestAnimationFrame(()=>{ $('#dl').style.display='none'; $('#dr').style.display='none'; $('#bow').style.display='none'; }));
   } else {
@@ -688,7 +701,7 @@ function playMain(){
     anim($('#dr'),[{transform:'rotateY(0deg)',opacity:1},{transform:'rotateY(62deg)',opacity:1,offset:.6},{transform:'rotateY(100deg)',opacity:0}],{delay:1300,duration:1450,easing:E.inOut});
     $$('.door .shade').forEach(s=>anim(s,[{opacity:0},{opacity:1}],{delay:1300,duration:1100}));
   }
-  if(!window.__seekMode) setTimeout(()=>{ $('#closed').style.display='none'; },2850);
+  if(!window.__seekMode && !SKIP) setTimeout(()=>{ $('#closed').style.display='none'; },2850);
   // cantos ondulados
   anim($('#ondaSD'),[{opacity:0,transform:'translate(280px,-280px)'},{opacity:1,transform:'none'}],{delay:1900,duration:1000,easing:E.out});
   anim($('#ondaIE'),[{opacity:0,transform:'translate(-280px,280px)'},{opacity:1,transform:'none'}],{delay:2150,duration:1000,easing:E.out});
@@ -845,7 +858,7 @@ function playMain(){
         o.fly.animate(fr,{duration:E.dur*1000,easing:'linear',fill:'forwards'}).finished.then(()=>{ o.box.style.visibility='hidden'; });
       }); })); }
   };
-  if(!window.__seekMode) setTimeout(()=>{ (function wl(){ if(!document.hidden) drawWings((performance.now()-T)/1000); requestAnimationFrame(wl); })(); }, 8100);
+  if(!window.__seekMode) setTimeout(()=>{ (function wl(){ if(!document.hidden) drawWings((performance.now()-T)/1000); requestAnimationFrame(wl); })(); }, at(8100));
   // 9. manchas aparecendo devagar
   dotEls.forEach(([d,t])=>anim(d,[{opacity:0,transform:'scale(.5)'},{opacity:1,transform:'scale(1)'}],{delay:sec(2.3+(t-2.3)*0.85),duration:1500,easing:E.out,after:clean}));
   // 10. loops sutis
@@ -857,7 +870,7 @@ function playMain(){
   anim(ar,[{opacity:0},{opacity:1}],{delay:11800,duration:900,easing:E.soft});
   const arB=ar.querySelector('svg');
   ar.querySelectorAll('svg').forEach(arB=>anim(arB,[{transform:'translateY(0)'},{transform:'translateY(14px)'}],{delay:11800,duration:900,iterations:Infinity,direction:'alternate',easing:'ease-in-out'}));
-  setTimeout(()=>{ document.body.classList.remove('locked'); ar.style.pointerEvents='auto'; s1.style.cursor='default'; $('#closed').style.display='none'; },11800);
+  setTimeout(()=>{ document.body.classList.remove('locked'); ar.style.pointerEvents='auto'; s1.style.cursor='default'; $('#closed').style.display='none'; },at(11800));
 }
 
 window.__seek=(t)=>{ drawWings(t); window.__fxSeekT=t; document.getAnimations().forEach(a=>{a.pause(); a.currentTime=t*1000;}); window.__lor && window.__lor(t*1000); window.__fxSeek(t); };
@@ -1031,6 +1044,7 @@ const OPEN_SRC="data:image/webp;base64,UklGRvRDFQBXRUJQVlA4WAoAAAASAAAAkQQA4wkAQ
   const vn=$('#vnome'); let fs=170; vn.style.fontSize=fs+'px'; while(vn.offsetWidth>1150 && fs>70){fs-=6; vn.style.fontSize=fs+'px';}
   layout(true);
   initRSVP();
+  if(mode==='again' && !params.has('autoplay')){ playSkip(); return; }      // já respondeu (Sim ou Não): pula a abertura
   $('#closed').classList.add('ready'); s1.style.cursor='pointer';
   s1.addEventListener('click',play);
   if(params.has('autoplay')) play();
