@@ -141,6 +141,11 @@ img{user-select:none;-webkit-user-drag:none;pointer-events:none}
   background:#a58ad8;border-radius:999px;padding:calc(var(--u)*22) calc(var(--u)*62) calc(var(--u)*22) calc(var(--u)*70);box-shadow:0 calc(var(--u)*12) calc(var(--u)*34) rgba(120,90,180,.32);transition:transform .2s;-webkit-tap-highlight-color:transparent}
 #dlBtn:active{transform:scale(.95)}
 #dlBtn svg{width:calc(var(--u)*50);height:calc(var(--u)*50);flex:none;overflow:visible}
+#som{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);right:calc(env(safe-area-inset-right,0px) + 14px);z-index:60;width:44px;height:44px;border-radius:50%;border:none;padding:0;cursor:pointer;
+  display:grid;place-items:center;background:rgba(255,255,255,.55);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 4px 14px rgba(90,60,120,.18);-webkit-tap-highlight-color:transparent;transition:transform .2s,opacity .6s}
+#som:active{transform:scale(.9)}
+#som svg{width:24px;height:24px;overflow:visible}
+#som .x{display:none} #som.mudo .x{display:inline} #som.mudo .w{display:none}
 </style>
 </head>
 <body class="locked">
@@ -202,6 +207,7 @@ img{user-select:none;-webkit-user-drag:none;pointer-events:none}
   <div id="dlBox"><div class="dt">Baixe o convite para não esquecer</div>
    <a id="dlBtn" href="convite-lorena.png" download="Convite Lorena 1 ano.png"><span>Baixar</span><svg viewBox="0 0 512 512" fill="none" stroke="#fff" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><path d="M256 38V330M134 214L256 336L378 214"/><path d="M34 352V442H478V352" stroke-linejoin="miter"/></svg></a></div>
 </section>
+<button id="som" type="button" aria-label="Silenciar o som"><svg viewBox="0 0 24 24" fill="none" stroke="#6c4fa3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" fill="#6c4fa3" fill-opacity=".18"/><path class="w" d="M15.5 9a4.2 4.2 0 0 1 0 6"/><path class="w" d="M18.2 6.4a8 8 0 0 1 0 11.2"/><path class="x" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
 <div id="flyL"><div id="flyI">
    <canvas id="fx" class="abs" style="left:0;top:0;width:1240px;pointer-events:none"></canvas>
    <div id="be" class="abs hide" data-a="c" data-y="940" style="left:246px;width:156.25px;height:153.75px"><div class="fly fill"><div class="idle fill"><div class="flap fill" style="transform-origin:59% 74%"><div class="flap2 fill" style="transform-origin:59% 74%"><canvas class="wc" data-k="esq" style="position:absolute;left:-43.75px;top:-43.75px;width:243.75px;height:241.25px"></canvas></div></div></div></div></div>
@@ -698,6 +704,7 @@ function playMain(){
   if(SKIP_OPEN) flyL.animate([{opacity:0},{opacity:1}],{delay:1500,duration:1000,easing:'ease-out',fill:'backwards'});   // borboletas só aparecem quando as portas abrem
   const T=performance.now()-(SKIP?SKIP_MS:0); T0=T;
   const at=ms=>Math.max(0,T+ms-performance.now());
+  if(!window.__seekMode) SND.schedule(T,SKIP);
   // 2-3. laço, fita e portas: animação pré-renderizada (WebP animado) — o celular só reproduz, sem calcular o 3D
   if(SKIP && !SKIP_OPEN){ $('#dl').style.display='none'; $('#dr').style.display='none'; $('#bow').style.display='none'; }
   else if(OPEN_BLOB && !window.__seekMode){
@@ -914,6 +921,7 @@ function playConfirm(){
                {opacity:1,transform:`translateX(${dx0}px) scale(.6)`,offset:ms(12)/ms(32),easing:'cubic-bezier(.33,1,.68,1)'},
                {opacity:1,transform:`translateX(${dx0}px) scale(1.12)`,offset:ms(23)/ms(32),easing:'cubic-bezier(.65,0,.35,1)'},
                {opacity:1,transform:`translateX(${dx0}px) scale(1)`}],{duration:ms(32),fill:'forwards'});
+  setTimeout(()=>SND.shot('confirm',1), ms(7));                      // som junto com a explosão dos confetes
   // 3) confetes explodindo do centro (trajetórias, giros, escalas e tempos da referência)
   const box=$('#confetti'), k=2.6*u;
   CONF.forEach(([w,h,circ,col,p0,p1,p2,tend,r0,r2])=>{
@@ -1032,7 +1040,7 @@ simB.addEventListener('click',()=>{ setTimeout(showReset,0);
 
 naoB.addEventListener('click',()=>{
   if(mode!=='ask') return; mode='bye'; salvar({resposta:'nao'}); showReset();
-  window.__bf&&__bf.flee();
+  window.__bf&&__bf.flee(); SND.stopGlitter();
   const out=[qtxt,simW,naoB,$('#ok')];
   Promise.all(out.map(el=>el.animate([{opacity:getComputedStyle(el).opacity,transform:'none'},{opacity:0,transform:'translateY(-12px)'}],{duration:380,easing:'ease-in',fill:'forwards'}).finished)).then(()=>{
     out.forEach(el=>el.style.display='none');
@@ -1041,6 +1049,70 @@ naoB.addEventListener('click',()=>{
     bye.querySelector('.t2').animate([{opacity:0,transform:'translateY(18px)'},{opacity:1,transform:'none'}],{delay:450,duration:800,easing:EO,fill:'both'});
   });
 });
+
+/* ---------- sons: música de fundo + efeitos ---------- */
+const SND=(()=>{
+  const AC=window.AudioContext||window.webkitAudioContext, buf={}, raw={}, log=[];
+  let master=null, muted=false; try{ muted=localStorage.getItem('convite-lorena:mudo')==='1'; }catch(e){}
+  let ctx=null, unlocked=false, glitWant=false, glitSrc=null, glitGain=null, rustleT=null, bgm=null;
+  const L=m=>{ log.push([Math.round(performance.now()),m]); };
+  const load=n=>raw[n]||(raw[n]=fetch('audio/'+n+'.mp3').then(r=>{ if(!r.ok) throw 0; return r.arrayBuffer(); }));
+  const dec=async n=>{ if(buf[n]) return buf[n]; if(!ctx) return null;
+    try{ const ab=await load(n); buf[n]=await new Promise((res,rej)=>ctx.decodeAudioData(ab.slice(0),res,rej)); }catch(e){ L('erro '+n); return null; }
+    return buf[n]; };
+  function init(){                                   // depois que o site carregou: prepara tudo (o som só começa no primeiro toque)
+    if(!bgm){ bgm=new Audio('audio/bg_music.mp3'); bgm.loop=true; bgm.preload='auto'; }
+    if(!ctx && AC){ try{ ctx=new AC(); master=ctx.createGain(); master.gain.value=muted?0:1; master.connect(ctx.destination); }catch(e){} }
+    if(bgm) bgm.muted=muted;
+    if(ctx) ['plants','lorena','glitter','confirm'].forEach(n=>dec(n));
+  }
+  function unlock(){                                 // navegadores só liberam áudio depois de um toque/clique
+    if(!bgm||!ctx) init();
+    if(ctx && ctx.state!=='running') ctx.resume().then(()=>{ if(glitWant) startGlitter(); }).catch(()=>{});
+    if(ctx && !unlocked){ const s=ctx.createBufferSource(); s.buffer=ctx.createBuffer(1,1,22050); s.connect(ctx.destination); s.start(0); }
+    if(bgm && bgm.paused && !document.hidden) bgm.play().then(()=>L('música')).catch(()=>{});
+    if(!unlocked){ unlocked=true; L('liberado'); }
+    if(glitWant) startGlitter();
+  }
+  ['pointerup','touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,()=>{
+    if(unlocked && ctx && ctx.state==='running' && bgm && !bgm.paused) return; unlock(); },{capture:true,passive:true}));
+  document.addEventListener('visibilitychange',()=>{ if(!unlocked) return;
+    if(document.hidden){ bgm&&bgm.pause(); ctx&&ctx.suspend(); } else { bgm&&bgm.play().catch(()=>{}); ctx&&ctx.resume(); } });
+  function shot(n,vol){ if(!ctx||ctx.state!=='running'||!buf[n]) return L('pulou '+n);
+    const s=ctx.createBufferSource(), g=ctx.createGain(); g.gain.value=vol; s.buffer=buf[n]; s.connect(g); g.connect(master); s.start(); L(n+' '+vol); }
+  const loopPts=b=>{ const d=b.getChannelData(0), th=1e-4; let a=0,z=d.length-1;    // ignora o silêncio que o MP3 põe no início e no fim
+    while(a<d.length&&Math.abs(d[a])<th)a++; while(z>a&&Math.abs(d[z])<th)z--; return [a/b.sampleRate,(z+1)/b.sampleRate]; };
+  const GLIT_VOL=0.9;                               // volume do glitter das borboletas
+  async function startGlitter(){ glitWant=true;
+    if(glitSrc||!ctx||ctx.state!=='running') return;
+    const b=await dec('glitter'); if(!b||glitSrc||!glitWant) return;
+    const [ls,le]=loopPts(b), t=ctx.currentTime;
+    glitSrc=ctx.createBufferSource(); glitSrc.buffer=b; glitSrc.loop=true; glitSrc.loopStart=ls; glitSrc.loopEnd=le;
+    glitGain=ctx.createGain(); glitGain.gain.setValueAtTime(0,t); glitGain.gain.linearRampToValueAtTime(GLIT_VOL,t+1.2);
+    glitSrc.connect(glitGain); glitGain.connect(master); glitSrc.start(0,ls); L('glitter');
+  }
+  function stopGlitter(){ glitWant=false; if(!glitSrc) return;
+    const g=glitGain, s=glitSrc, t=ctx.currentTime; glitSrc=null;
+    g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value,t); g.gain.linearRampToValueAtTime(0,t+1.5); s.stop(t+1.6); L('glitter fim'); }
+  function rustle(wait){ clearTimeout(rustleT);       // folhagem baixinha (5%) de vez em quando, a cada 15–25 s
+    rustleT=setTimeout(()=>{ if(!document.hidden) shot('plants',.05); rustle(15000+Math.random()*10000); }, wait); }
+  function schedule(T,skip){                          // tempos relativos ao início da animação do convite
+    const at=ms=>Math.max(0,T+ms-performance.now());
+    if(!skip){
+      setTimeout(()=>shot('plants',.15), at(2500));    // plantas entrando em cena
+      setTimeout(()=>shot('lorena',1), at(7700));      // 0,5 s antes de terminar a escrita de "Lorena" (só uma vez)
+    }
+    rustle((skip?0:at(2500))+15000+Math.random()*10000);
+    setTimeout(startGlitter, at(8300));                // borboletas laterais surgindo
+  }
+  function setMuted(m){ muted=m; try{ localStorage.setItem('convite-lorena:mudo',m?'1':'0'); }catch(e){}
+    if(bgm) bgm.muted=m; if(master&&ctx){ const t=ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value,t); master.gain.linearRampToValueAtTime(m?0:1,t+.25); }
+    const b=document.getElementById('som'); b.classList.toggle('mudo',m); b.setAttribute('aria-label',m?'Ativar o som':'Silenciar o som'); }
+  document.getElementById('som').addEventListener('click',e=>{ e.stopPropagation(); setMuted(!muted); });
+  setMuted(muted);
+  return {init,unlock,schedule,stopGlitter,shot,log};
+})();
+window.__snd=SND;
 
 let OPEN_BLOB=null, LACO_BLOB=null;
 async function loadWebp(src){ try{ const b64=src.split(',')[1], bin=atob(b64), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); if(u8.length<2000) return null;
@@ -1059,6 +1131,7 @@ const OPEN_SRC="data:image/webp;base64,UklGRvRDFQBXRUJQVlA4WAoAAAASAAAAkQQA4wkAQ
   const vn=$('#vnome'); let fs=170; vn.style.fontSize=fs+'px'; while(vn.offsetWidth>1150 && fs>70){fs-=6; vn.style.fontSize=fs+'px';}
   layout(true);
   initRSVP();
+  SND.init();
   if(mode==='again' && !params.has('autoplay')){ if(document.documentElement.classList.contains('answered')) playSkip(); else playSkipOpen(); return; }      // já respondeu (Sim ou Não): pula a abertura
   $('#closed').classList.add('ready'); s1.style.cursor='pointer';
   s1.addEventListener('click',play);
